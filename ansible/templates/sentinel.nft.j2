@@ -1,0 +1,15 @@
+table inet sentinel_filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif lo accept
+    ct state established,related accept
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+{% for cidr in sentinel_management_cidrs %}
+    ip saddr {{ cidr }} tcp dport {{ sentinel_ssh_port }} accept
+{% endfor %}
+{% for port in sentinel_public_tcp_ports %}
+    tcp dport {{ port }} accept
+{% endfor %}
+  }
+}

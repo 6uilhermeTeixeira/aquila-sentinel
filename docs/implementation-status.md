@@ -2,11 +2,11 @@
 
 | Área | Estado | Evidência necessária para concluir |
 |---|---|---|
-| Identidade | Base local de Keycloak e PostgreSQL | Realm, SSO OIDC/SAML e MFA administrativo testados |
-| Segredos | OpenBao em Raft, inicialização manual | PKI, credenciais dinâmicas, rotação e auditoria testadas |
+| Identidade | Keycloak, PostgreSQL, realm Sentinel e TOTP inicial | Integração SSO OIDC/SAML e WebAuthn administrativo testados |
+| Segredos | OpenBao em Raft, auditoria local e PKI com certificados curtos | Credenciais dinâmicas, rotação e auditoria externa testadas |
 | PAM | Pendente | Broker, bloqueio de SSH direto e gravação de sessões |
-| Hardening | Pendente | Aplicação CIS em Ubuntu 24.04 e relatório OpenSCAP ≥ 90% |
+| Hardening | Automação básica pronta | Aplicação CIS em Ubuntu 24.04 e relatório OpenSCAP ≥ 90% |
 | Zero Trust | Política OPA padrão de negação | Verificação de token em gateway, mTLS e microsegmentação entre VMs |
-| Auditoria | Pendente | Entrega ao Oculus e cópia imutável comprovadas |
-| Recuperação | Pendente | Backup e restauração de banco e Raft comprovados |
+| Auditoria | Log local do OpenBao ativo | Entrega ao Oculus e cópia imutável comprovadas |
+| Recuperação | Backup criptografado e restauração isolada de PostgreSQL e Raft testados | Cópia externa e metas RPO/RTO comprovadas |
 | Standalone | Pendente | Instalação limpa com TLS e MFA em ambiente cliente |

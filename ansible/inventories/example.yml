@@ -1,0 +1,11 @@
+all:
+  children:
+    sentinel:
+      hosts:
+        sentinel-01.example.invalid:
+          ansible_user: operator
+      vars:
+        sentinel_operator: operator
+        sentinel_management_cidrs:
+          - 192.0.2.0/24
+        sentinel_activate_firewall: false

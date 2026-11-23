@@ -76,7 +76,18 @@ def main():
         "allowed_domains": "sentinel.local", "allow_subdomains": True,
         "ttl": "1h", "max_ttl": "24h", "key_type": "ec"
     }, token)
-    print("OpenBao local inicializado, aberto e com auditoria e PKI habilitadas.")
+    if "kv/" not in mounts:
+        request("/sys/mounts/kv", {"type": "kv", "options": {"version": "2"}}, token)
+    policy = 'path "kv/data/pipeline/*" { capabilities = ["read"] }'
+    request("/sys/policies/acl/pipeline-read", {"policy": policy}, token)
+    auth = request("/sys/auth", token=token)
+    if "approle/" not in auth:
+        request("/sys/auth/approle", {"type": "approle"}, token)
+    request("/auth/approle/role/pipeline-read", {
+        "token_policies": ["pipeline-read"], "token_ttl": "15m", "token_max_ttl": "1h",
+        "secret_id_ttl": "1h", "secret_id_num_uses": 1
+    }, token)
+    print("OpenBao local inicializado, aberto e com auditoria, PKI e AppRole habilitados.")
     print("Proteja .local/openbao-init.json e retire o token root após criar administradores.")
 
 

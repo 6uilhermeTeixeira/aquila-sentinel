@@ -26,8 +26,16 @@ def request(method, path, token=None, data=None):
 
 def main():
     if MARKER.exists():
-        print("Identidade ja configurada neste ambiente local.")
-        return
+        try:
+            request("GET", "/realms/sentinel/.well-known/openid-configuration")
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if not (ROOT / ".local" / "gateway-client-secret").exists():
+                raise RuntimeError("Realm existente sem cliente do gateway; requer recuperação administrativa")
+            print("Identidade ja configurada neste ambiente local.")
+            return
 
     password = (ROOT / ".local" / "admin_password").read_text().strip()
     form = urlencode({
@@ -50,6 +58,9 @@ def main():
     except HTTPError as error:
         if error.code != 409:
             raise
+
+    from gateway_bootstrap import main as configure_gateway_client
+    configure_gateway_client(token)
 
     action = request("GET", "/admin/realms/master/authentication/required-actions/CONFIGURE_TOTP", token)
     action.update(enabled=True, defaultAction=True)

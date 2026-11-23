@@ -1,1 +1,1 @@
-{"sentinel":{"permissions":{}}}
+{"sentinel":{"permissions":{"sentinel-service":{"health":{"read":true}}}}}

@@ -1,0 +1,102 @@
+name: aquila-sentinel
+services:
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [identity]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U keycloak -d keycloak']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    entrypoint: [/bin/bash, -ec]
+    command:
+      - |
+        export KC_DB_PASSWORD="$$(cat /run/secrets/db_password)"
+        export KC_BOOTSTRAP_ADMIN_PASSWORD="$$(cat /run/secrets/admin_password)"
+        exec /opt/keycloak/bin/kc.sh start-dev --http-host=0.0.0.0
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_HEALTH_ENABLED: 'true'
+    secrets: [db_password, admin_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:8080:8080'
+    networks: [identity]
+    restart: unless-stopped
+  openbao-init:
+    image: openbao/openbao:2.4.4
+    user: "0:0"
+    entrypoint: [/bin/sh, -ec]
+    command: ['chown -R 100:1000 /openbao/data /openbao/audit']
+    volumes:
+      - openbao_data:/openbao/data
+      - openbao_audit:/openbao/audit
+    restart: "no"
+  openbao:
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully
+    image: openbao/openbao:2.4.4
+    command: server -config=/etc/openbao/config.hcl
+    volumes:
+      - ./openbao/config.hcl:/etc/openbao/config.hcl:ro
+      - openbao_data:/openbao/data
+      - openbao_audit:/openbao/audit
+    ports:
+      - '127.0.0.1:8200:8200'
+    networks: [secrets]
+    restart: unless-stopped
+  gateway:
+    image: node:22-alpine
+    working_dir: /app
+    command: [node, server.js]
+    environment:
+      EXPECTED_ISSUER: http://127.0.0.1:8080/realms/sentinel
+      EXPECTED_AUDIENCE: sentinel-gateway
+      JWKS_URL: http://keycloak:8080/realms/sentinel/protocol/openid-connect/certs
+      OPA_URL: http://opa:8181/v1/data/sentinel/access/allow
+      PORT: '8081'
+    volumes:
+      - ../gateway:/app:ro
+    ports:
+      - '127.0.0.1:8081:8081'
+    networks: [identity, policy]
+    depends_on: [keycloak, opa]
+    restart: unless-stopped
+  opa:
+    image: openpolicyagent/opa:1.11.0
+    command: [run, --server, --addr=0.0.0.0:8181, /policies]
+    volumes:
+      - ../policies/opa:/policies:ro
+    ports:
+      - '127.0.0.1:8181:8181'
+    networks: [policy]
+    restart: unless-stopped
+networks:
+  identity: {}
+  secrets: {}
+  policy: {}
+volumes:
+  postgres_data:
+  openbao_data:
+  openbao_audit:
+secrets:
+  db_password:
+    file: ../.local/db_password
+  admin_password:
+    file: ../.local/admin_password

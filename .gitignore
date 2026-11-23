@@ -1,0 +1,8 @@
+.local/
+.env
+*.bak
+*.dump
+*.key
+*.pem
+__pycache__/
+*.pyc

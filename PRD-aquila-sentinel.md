@@ -281,7 +281,7 @@ aquila-sentinel/
 
 ## 16. Definição de pronto (v1)
 
-- [ ] Fases 0 a 3 concluídas e testadas
+- [ ] Fases 0 a 4 concluídas e testadas, incluindo rejeição de tráfego sem identidade
 - [ ] Relatório de conformidade ≥ 90% (CIS L1)
 - [ ] MFA obrigatório para todos os papéis privilegiados
 - [ ] Nenhum segredo estático identificado por varredura

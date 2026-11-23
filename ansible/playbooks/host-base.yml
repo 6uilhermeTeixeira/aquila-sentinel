@@ -1,0 +1,148 @@
+---
+- name: Prepare the Aquila Sentinel Ubuntu host
+  hosts: sentinel
+  become: true
+  gather_facts: true
+  vars:
+    sentinel_ssh_port: 22
+    sentinel_public_tcp_ports: [443]
+    sentinel_activate_firewall: false
+  pre_tasks:
+    - name: Require Ubuntu 24.04
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version == '24.04'
+        fail_msg: This playbook targets Ubuntu Server 24.04 only.
+
+    - name: Require a nonroot operator and management IPv4 CIDRs
+      ansible.builtin.assert:
+        that:
+          - sentinel_operator is defined
+          - sentinel_operator != 'root'
+          - sentinel_management_cidrs is defined
+          - sentinel_management_cidrs | length > 0
+          - sentinel_management_cidrs | select('match', '^[0-9.]+/[0-9]+$') | list | length == sentinel_management_cidrs | length
+        fail_msg: Set sentinel_operator and sentinel_management_cidrs in inventory.
+
+    - name: Check the operator account exists
+      ansible.builtin.getent:
+        database: passwd
+        key: '{{ sentinel_operator }}'
+
+    - name: Check the operator has an authorized key
+      ansible.builtin.stat:
+        path: '{{ getent_passwd[sentinel_operator][4] }}/.ssh/authorized_keys'
+      register: sentinel_authorized_keys
+
+    - name: Refuse to disable password login without a key
+      ansible.builtin.assert:
+        that: sentinel_authorized_keys.stat.exists
+
+  tasks:
+    - name: Install host security packages
+      ansible.builtin.apt:
+        name:
+          - auditd
+          - audispd-plugins
+          - nftables
+          - openscap-scanner
+          - unattended-upgrades
+          - openssh-server
+        state: present
+        update_cache: true
+
+    - name: Configure SSH access
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/20-aquila-sentinel.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          PermitEmptyPasswords no
+          X11Forwarding no
+          AllowUsers {{ sentinel_operator }}
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload SSH
+
+    - name: Enable automatic security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - name: Ensure audit daemon is running
+      ansible.builtin.service:
+        name: auditd
+        enabled: true
+        state: started
+
+    - name: Create firewall configuration directory
+      ansible.builtin.file:
+        path: /etc/nftables.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Render firewall rules
+      ansible.builtin.template:
+        src: ../templates/sentinel.nft.j2
+        dest: /etc/nftables.d/sentinel.nft
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart firewall
+
+    - name: Validate firewall syntax
+      ansible.builtin.command: nft -c -f /etc/nftables.d/sentinel.nft
+      changed_when: false
+
+    - name: Install firewall service when explicitly activated
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/aquila-sentinel-firewall.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Aquila Sentinel host firewall
+          After=network-pre.target
+          Before=network.target
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStartPre=-/usr/sbin/nft delete table inet sentinel_filter
+          ExecStart=/usr/sbin/nft -f /etc/nftables.d/sentinel.nft
+          ExecStop=/usr/sbin/nft delete table inet sentinel_filter
+          [Install]
+          WantedBy=multi-user.target
+      when: sentinel_activate_firewall | bool
+
+    - name: Start firewall when explicitly activated
+      ansible.builtin.systemd:
+        name: aquila-sentinel-firewall.service
+        daemon_reload: true
+        enabled: true
+        state: started
+      when: sentinel_activate_firewall | bool
+
+  handlers:
+    - name: Reload SSH
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Restart firewall
+      ansible.builtin.systemd:
+        name: aquila-sentinel-firewall.service
+        state: restarted
+      when: sentinel_activate_firewall | bool
